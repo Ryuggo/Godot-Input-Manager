@@ -7,12 +7,13 @@ var inputs_gui: Dictionary = {}
 var inputs_game: Dictionary = {}
 
 enum InputPressTypes{
-	NONE= 0,
-	TAP = 1,		# Triggers only when a button is pushed down and released quickly
-	DOUBLE_TAP = 2,	# Triggers on the second press if you quickly push down the same button twice
-	PRESS = 3,		# Triggers as soon as a button is pushed
-	LONG_PRESS = 4,	# Triggers after a button has been pushed down for a set amount of time
-	RELEASE = 5		# Triggers when the button is released after being pressed down
+	TAP = 1,			# Triggers only when a button is pushed down and released quickly
+	DOUBLE_TAP = 2,		# Triggers on the second press if you quickly push down the same button twice
+	PRESS = 3,			# Triggers as soon as a button is pushed
+	LONG_PRESS = 4,		# Triggers after a button has been pushed down for a set amount of time
+	HOLD = 5,			# Triggers continuously while a button is being pushed down
+	LONG_HOLD = 6,		# After a button has been pushed down for a set amount of time, this starts triggering continuously
+	RELEASE = 7			# Triggers when the button is released after being pressed down
 }
 
 var current_inputs: Dictionary
@@ -110,6 +111,10 @@ func input_manager(event: InputEvent) -> void:
 		elif current_inputs[action_name] == InputPressTypes.RELEASE:
 			send_gameplay_signal(event.as_text(), InputPressTypes.DOUBLE_TAP)
 		
+		send_gameplay_signal(event.as_text(), InputPressTypes.HOLD)
+		if current_inputs[action_name] == InputPressTypes.LONG_PRESS:
+			send_gameplay_signal(event.as_text(), InputPressTypes.LONG_HOLD)
+		
 		await get_tree().create_timer(minimum_hold_timer).timeout
 		if !current_inputs.has(action_name): return
 		
@@ -132,6 +137,7 @@ func input_manager(event: InputEvent) -> void:
 
 
 func send_gameplay_signal(event: String, press_type: InputPressTypes) -> void:
+	if debug: print(event + " - " + str(press_type))
 	var press = str(press_type)
 	if !inputs_game[event].has(press): return
 	gameplay_input.emit(inputs_game[event][press])
