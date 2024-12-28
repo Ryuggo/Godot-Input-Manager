@@ -1,13 +1,19 @@
 extends Node
 
-@export var minimum_hold_keyboard_timer = 0.15
-@export var minimum_hold_gamepad_timer = 0.2
-var minimum_hold_timer = minimum_hold_keyboard_timer
+@export var debug: bool = false
+@export var minimum_hold_timer = 0.2
 
 var inputs_gui: Dictionary = {}
 var inputs_game: Dictionary = {}
 
-enum InputPressTypes {LONG_PRESS= -1, NONE= 0, SIMPLE_PRESS= 1, DOUBLE_PRESS= 2}
+enum InputPressTypes{
+	NONE= 0,
+	TAP = 1,		# Triggers only when a button is pushed down and released quickly
+	DOUBLE_TAP = 2,	# Triggers on the second press if you quickly push down the same button twice
+	PRESS = 3,		# Triggers as soon as a button is pushed
+	LONG_PRESS = 4,	# Triggers after a button has been pushed down for a set amount of time
+	RELEASE = 5		# Triggers when the button is released after being pressed down
+}
 
 var current_inputs: Dictionary
 var pressed_inputs: Array[String]
@@ -39,7 +45,7 @@ func _ready() -> void:
 					)
 			else:
 				key = inputEvent.as_text()
-			action[InputPressTypes.SIMPLE_PRESS] = actionName
+			action[InputPressTypes.PRESS] = actionName
 			if actionName.begins_with("ui_"):
 				inputs_gui[key] = actionName
 			else:
@@ -74,11 +80,6 @@ func save_inputs() -> void:
 
 # Better for GUI
 func _input(event):
-	if event is InputEventKey:
-		minimum_hold_timer = minimum_hold_keyboard_timer
-	elif event is InputEventJoypadButton:
-		minimum_hold_timer = minimum_hold_gamepad_timer
-	
 	if !inputs_gui.has(event.as_text()): return
 	
 	gui_input.emit(inputs_gui[event.as_text()])
@@ -102,26 +103,33 @@ func _unhandled_input(event: InputEvent) -> void:
 func input_manager(event: InputEvent) -> void:
 	var action_name = event.as_text()
 	
-	if event.is_pressed() && !pressed_inputs.has(action_name):
-		pressed_inputs.append(action_name)
+	if event.is_pressed():
 		if !current_inputs.has(action_name):
-			current_inputs[action_name] = InputPressTypes.LONG_PRESS
-		elif current_inputs[action_name] == InputPressTypes.SIMPLE_PRESS:
-			current_inputs[action_name] += 1
-			pressed_inputs.erase(action_name)
-			return
+			send_gameplay_signal(event.as_text(), InputPressTypes.PRESS)
+			current_inputs[action_name] = InputPressTypes.PRESS
+		elif current_inputs[action_name] == InputPressTypes.RELEASE:
+			send_gameplay_signal(event.as_text(), InputPressTypes.DOUBLE_TAP)
+		
 		await get_tree().create_timer(minimum_hold_timer).timeout
-		if !current_inputs.has(action_name):
-			current_inputs[action_name] = InputPressTypes.SIMPLE_PRESS # Security for controller because it bugs otherwise
-		send_gameplay_signal(event.as_text(), current_inputs[action_name])
+		if !current_inputs.has(action_name): return
+		
+		if current_inputs[action_name] != InputPressTypes.PRESS: return
+		
+		current_inputs[action_name] = InputPressTypes.LONG_PRESS
+		send_gameplay_signal(event.as_text(), InputPressTypes.LONG_PRESS)
+	elif event.is_released():
+		send_gameplay_signal(event.as_text(), InputPressTypes.RELEASE)
+		
+		if !current_inputs.has(action_name): return
+		
+		if current_inputs[action_name] == InputPressTypes.PRESS:
+			send_gameplay_signal(event.as_text(), InputPressTypes.TAP)
+		
+		current_inputs[action_name] = InputPressTypes.RELEASE
+		
+		await get_tree().create_timer(minimum_hold_timer).timeout
 		current_inputs.erase(action_name)
-	elif event.is_released() && pressed_inputs.has(action_name):
-		pressed_inputs.erase(action_name)
-		if !current_inputs.has(action_name):
-			send_gameplay_signal(event.as_text(), InputPressTypes.NONE)
-			return 
-		if current_inputs[action_name] == InputPressTypes.LONG_PRESS:
-			current_inputs[action_name] = InputPressTypes.SIMPLE_PRESS
+
 
 func send_gameplay_signal(event: String, press_type: InputPressTypes) -> void:
 	var press = str(press_type)
@@ -130,9 +138,7 @@ func send_gameplay_signal(event: String, press_type: InputPressTypes) -> void:
 
 
 func _on_gameplay_input(action: String) -> void:
-	print("Gameplay Signal : " + action)
-	pass
+	if debug: print("Gameplay Signal : " + action)
 
 func _on_gui_input(action: String) -> void:
-	print("Gui Signal : " + action)
-	pass
+	if debug: print("Gui Signal : " + action)
